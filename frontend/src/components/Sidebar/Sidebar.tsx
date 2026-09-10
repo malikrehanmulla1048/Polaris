@@ -10,7 +10,7 @@ interface SidebarProps {
   onShipProfileChange: (v: IceClass) => void;
   onStartChange: (lat: string, lon: string) => void;
   onEndChange: (lat: string, lon: string) => void;
-  onFindRoute: () => void;
+  onFindRoute: (startLat?: number, startLon?: number, endLat?: number, endLon?: number) => void;
   onReplan: () => void;
   isConnected: boolean;
   lastShipUpdate: string | null;
@@ -23,6 +23,8 @@ const LAYER_ITEMS: { key: keyof LayerState; label: string; color: string; icon: 
   { key: 'uncertainty', label: 'Uncertainty Cones', color: '#7fb3ff', icon: '◎' },
   { key: 'ships', label: 'Ship Tracking', color: '#00e676', icon: '⛴️' },
   { key: 'routes', label: 'Routes', color: '#00e676', icon: '🗺' },
+  { key: 'wind', label: 'Wind Field', color: '#b2dfdb', icon: '💨' },
+  { key: 'currents', label: 'Ocean Currents', color: '#00bfa5', icon: '🌊' },
 ];
 
 const SHIP_PROFILES: { value: IceClass; label: string }[] = [
@@ -56,7 +58,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleFindRoute = () => {
     onStartChange(startLat, startLon);
     onEndChange(endLat, endLon);
-    onFindRoute();
+    const sLat = parseFloat(startLat);
+    const sLon = parseFloat(startLon);
+    const eLat = parseFloat(endLat);
+    const eLon = parseFloat(endLon);
+    if (!isNaN(sLat) && !isNaN(sLon) && !isNaN(eLat) && !isNaN(eLon)) {
+      onFindRoute(sLat, sLon, eLat, eLon);
+    } else {
+      onFindRoute();
+    }
   };
 
   return (

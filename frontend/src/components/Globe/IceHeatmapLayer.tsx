@@ -8,69 +8,96 @@ interface IceHeatmapLayerProps {
   opacity: number;
 }
 
-// Color ramp: blue (0% SIC) → cyan → white (100% SIC)
-function sicToColor(concentration: number, opacity: number): Cesium.Color {
+
+// Convert concentration (0-1) to an rgba CSS string
+function getSicColorString(concentration: number, opacity: number): string {
   const t = Math.max(0, Math.min(1, concentration));
-  if (t < 0.1) return new Cesium.Color(0.05, 0.15, 0.4, 0);
+  if (t < 0.05) return `rgba(0,0,0,0)`;
+
+  let r, g, b, a;
   if (t < 0.3) {
-    const s = (t - 0.1) / 0.2;
-    return new Cesium.Color(0.1 * (1 - s) + 0.1 * s, 0.3 * (1 - s) + 0.55 * s, 0.7 * (1 - s) + 0.85 * s, 0.25 * s * opacity);
-  }
-  if (t < 0.6) {
+    const s = (t - 0.05) / 0.25;
+    r = Math.floor((0.05 + 0.05 * s) * 255);
+    g = Math.floor((0.25 + 0.35 * s) * 255);
+    b = Math.floor((0.60 + 0.30 * s) * 255);
+    a = 0.15 + 0.25 * s;
+  } else if (t < 0.6) {
     const s = (t - 0.3) / 0.3;
-    return new Cesium.Color(0.4 * s, 0.7 * (1 - s) + 0.85 * s, 0.9 * (1 - s) + 0.95 * s, (0.4 + 0.2 * s) * opacity);
-  }
-  if (t < 0.85) {
+    r = Math.floor((0.10 + 0.30 * s) * 255);
+    g = Math.floor((0.60 + 0.30 * s) * 255);
+    b = Math.floor((0.90 + 0.08 * s) * 255);
+    a = 0.40 + 0.20 * s;
+  } else if (t < 0.85) {
     const s = (t - 0.6) / 0.25;
-    return new Cesium.Color(0.6 + 0.4 * s, 0.9 * (1 - s) + s, 0.95, (0.6 + 0.2 * s) * opacity);
+    r = Math.floor((0.40 + 0.50 * s) * 255);
+    g = Math.floor((0.90 + 0.08 * s) * 255);
+    b = Math.floor(0.98 * 255);
+    a = 0.60 + 0.20 * s;
+  } else {
+    const s = (t - 0.85) / 0.15;
+    r = Math.floor((0.90 + 0.10 * s) * 255);
+    g = Math.floor((0.98 + 0.02 * s) * 255);
+    b = 255;
+    a = 0.80 + 0.18 * s;
   }
-  // High concentration: near-white
-  const s = (t - 0.85) / 0.15;
-  return new Cesium.Color(0.9 + 0.1 * s, 0.95 + 0.05 * s, 1.0, (0.8 + 0.15 * s) * opacity);
+  return `rgba(${r},${g},${b},${a * opacity})`;
 }
 
 export function IceHeatmapLayer({ viewer, cells, opacity }: IceHeatmapLayerProps) {
-  const dsRef = useRef<Cesium.CustomDataSource | null>(null);
+  const layerRef = useRef<Cesium.ImageryLayer | null>(null);
 
   useEffect(() => {
     if (!viewer || viewer.isDestroyed() || cells.length === 0) return;
 
-    // Remove previous
-    if (dsRef.current) {
-      viewer.dataSources.remove(dsRef.current);
-      dsRef.current = null;
+    if (layerRef.current) {
+      viewer.imageryLayers.remove(layerRef.current);
+      layerRef.current = null;
     }
 
-    const ds = new Cesium.CustomDataSource('ice-heatmap');
-    const STEP = 0.5; // degrees per cell
+    // Grid bounds
+    const lonMin = -180;
+    const lonMax = 180;
+    const latMin = -90;
+    const latMax = -55;
+    const res = 0.5;
 
-    // Batch all cells
+    const width = Math.round((lonMax - lonMin) / res);
+    const height = Math.round((latMax - latMin) / res);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Draw cells
     for (const cell of cells) {
-      if (cell.concentration < 0.05) continue; // skip near-zero cells for performance
+      if (cell.concentration < 0.05) continue;
+      
+      // X maps from lonMin to lonMax
+      const x = Math.round((cell.lon - lonMin) / res);
+      // Y maps from latMax (top, 0) to latMin (bottom, height)
+      const y = Math.round((latMax - cell.lat) / res);
 
-      const color = sicToColor(cell.concentration, opacity);
-      ds.entities.add({
-        rectangle: {
-          coordinates: Cesium.Rectangle.fromDegrees(
-            cell.lon - STEP / 2,
-            cell.lat - STEP / 2,
-            cell.lon + STEP / 2,
-            cell.lat + STEP / 2
-          ),
-          material: color,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          classificationType: Cesium.ClassificationType.BOTH,
-        },
-      });
+      ctx.fillStyle = getSicColorString(cell.concentration, opacity);
+      ctx.fillRect(x, y, Math.ceil(1.2), Math.ceil(1.2)); // Slight overlap to prevent grid lines
     }
 
-    viewer.dataSources.add(ds);
-    dsRef.current = ds;
+    Cesium.SingleTileImageryProvider.fromUrl(canvas.toDataURL(), {
+      rectangle: Cesium.Rectangle.fromDegrees(lonMin, latMin, lonMax, latMax),
+    }).then(provider => {
+      if (viewer.isDestroyed() || !layerRef) return;
+      const layer = new Cesium.ImageryLayer(provider, {
+        alpha: 1.0, // Opacity is baked into the canvas pixels
+      });
+      viewer.imageryLayers.add(layer);
+      layerRef.current = layer;
+    });
 
     return () => {
-      if (dsRef.current && !viewer.isDestroyed()) {
-        viewer.dataSources.remove(dsRef.current, true);
-        dsRef.current = null;
+      if (layerRef.current && !viewer.isDestroyed()) {
+        viewer.imageryLayers.remove(layerRef.current);
+        layerRef.current = null;
       }
     };
   }, [viewer, cells, opacity]);
