@@ -10,7 +10,7 @@ import { ShipPopup } from '@/components/Popups/ShipPopup';
 import { RoutePopup } from '@/components/Popups/RoutePopup';
 import { Legend } from '@/components/Legend/Legend';
 
-import { fetchIceForecast, fetchIcebergs, planRoute } from '@/services/api';
+import { fetchIceForecast, fetchIcebergs, fetchWindField, fetchOceanCurrents, planRoute } from '@/services/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useCesiumViewer } from '@/hooks/useCesiumViewer';
 
@@ -26,6 +26,8 @@ const DEFAULT_LAYERS: LayerState = {
   ships: true,
   routes: true,
   uncertainty: false,
+  wind: false, // Turn wind off by default so they don't clash
+  currents: true, // Turn currents on by default
 };
 
 function App() {
@@ -64,6 +66,20 @@ function App() {
     retry: 2,
   });
 
+  const { data: windData } = useQuery({
+    queryKey: ['windField'],
+    queryFn: () => fetchWindField(),
+    refetchInterval: 12 * 60 * 60 * 1000,
+    retry: 2,
+  });
+
+  const { data: currentsData } = useQuery({
+    queryKey: ['oceanCurrents'],
+    queryFn: () => fetchOceanCurrents(),
+    refetchInterval: 12 * 60 * 60 * 1000,
+    retry: 2,
+  });
+
   // Live ship data via WebSocket
   const { ships, lastUpdate, isConnected } = useWebSocket();
 
@@ -89,17 +105,20 @@ function App() {
     setState((s) => ({ ...s, selectedRoute: route }));
   }, []);
 
-  const handleFindRoute = useCallback(async () => {
-    const { startPoint, endPoint, shipProfile } = state;
-    if (!startPoint || !endPoint) return;
+  const handleFindRoute = useCallback(async (startLat?: number, startLon?: number, endLat?: number, endLon?: number) => {
+    const sPt = (startLat !== undefined && startLon !== undefined) ? {lat: startLat, lon: startLon} : state.startPoint;
+    const ePt = (endLat !== undefined && endLon !== undefined) ? {lat: endLat, lon: endLon} : state.endPoint;
+    const { shipProfile } = state;
+    
+    if (!sPt || !ePt) return;
 
-    setState((s) => ({ ...s, isLoadingRoute: true }));
+    setState((s) => ({ ...s, isLoadingRoute: true, startPoint: sPt, endPoint: ePt }));
     try {
       const route = await planRoute({
-        start_lat: startPoint.lat,
-        start_lon: startPoint.lon,
-        end_lat: endPoint.lat,
-        end_lon: endPoint.lon,
+        start_lat: sPt.lat,
+        start_lon: sPt.lon,
+        end_lat: ePt.lat,
+        end_lon: ePt.lon,
         ship_type: shipProfile,
         avoid_icebergs: true,
       });
@@ -114,7 +133,7 @@ function App() {
       console.error('Route planning failed:', err);
       setState((s) => ({ ...s, isLoadingRoute: false }));
     }
-  }, [state, zoomToRoute]);
+  }, [state.startPoint, state.endPoint, state.shipProfile, zoomToRoute]);
 
   const handleReplan = useCallback(() => {
     setState((s) => ({ ...s, currentRoute: null }));
@@ -159,6 +178,8 @@ function App() {
         iceOpacity={state.iceOpacity}
         icebergs={icebergData?.icebergs ?? []}
         ships={ships}
+        windData={windData}
+        currentsData={currentsData}
         route={state.currentRoute}
         layers={state.layers}
         onIcebergClick={handleIcebergClick}

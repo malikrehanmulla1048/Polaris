@@ -15,8 +15,11 @@ scipy
 pandas
 xarray
 netCDF4
+cfgrib
 h5py
 h5netcdf
+herbie-data
+copernicusmarine
 
 # Geospatial
 geopandas
