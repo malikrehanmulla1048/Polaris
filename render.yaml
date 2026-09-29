@@ -1,6 +1,7 @@
 services:
   - type: web
     name: polaris-backend
+    plan: free 
     env: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
