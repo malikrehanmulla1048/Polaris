@@ -70,10 +70,10 @@ export const WindLayerResium: React.FC<WindLayerResiumProps> = ({ viewer, data, 
       }
     };
 
-    const finalOptions = options ? { windOptions: { ...defaultOptions.windOptions, ...options.windOptions } } : defaultOptions;
+    const finalOptions: any = options ? { windOptions: { ...defaultOptions.windOptions, ...options.windOptions } } : defaultOptions;
 
     // Initialize the WindLayer
-    const windLayer = new WindLayer(viewer, processedData, finalOptions);
+    const windLayer = new WindLayer(viewer, processedData, finalOptions as any);
 
     windLayerRef.current = windLayer;
 
